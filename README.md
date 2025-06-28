@@ -8,21 +8,21 @@
 
 ---
 
-## ✨ Why?
+## Why?
 
 Your inbox should empower you—not bury you. *gmail\_poll* applies lightweight NLP to slice daily mail into three buckets:
 
 | Bucket                       | Action                   | Definition                                    |
 | ---------------------------- | ------------------------ | --------------------------------------------- |
-| **Important & Urgent**       | ⭐ **Star + Keep**        | Directly impacts your day; you must see this. |
-| **Important but Not Urgent** | 🏷️ **Label / Review**   | Matters, but can wait until planned review.   |
-| **Low Value**                | 🗑️ **Archive / Delete** | Ads, notifications, social clutter.           |
+| **Important & Urgent**       | **Star + Keep**        | Directly impacts your day; you must see this. |
+| **Important but Not Urgent** | **Label / Review**   | Matters, but can wait until planned review.   |
+| **Low Value**                | **Archive / Delete** | Ads, notifications, social clutter.           |
 
 Run as a background daemon (systemd, Docker, or cron) and reclaim head‑space you can invest elsewhere.
 
 ---
 
-## 🚀 Features
+## Features
 
 * **Sentiment & priority scoring** powered by a distilled Transformer (≈40 MB, runs on CPU)
 * **Rule overlay**: whitelist/blacklist domains or subjects for deterministic routing
@@ -33,7 +33,7 @@ Run as a background daemon (systemd, Docker, or cron) and reclaim head‑space y
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 ┌───────────────┐      poll (1 min)
@@ -52,7 +52,7 @@ Run as a background daemon (systemd, Docker, or cron) and reclaim head‑space y
 
 ---
 
-## 🔧 Installation
+## Installation
 
 ### 1. Clone & install
 
@@ -102,7 +102,7 @@ sudo systemctl enable --now gmail_poll
 
 ---
 
-## 🛠️ Usage
+## Usage
 
 | Command                      | Description                               |
 | ---------------------------- | ----------------------------------------- |
@@ -114,7 +114,7 @@ sudo systemctl enable --now gmail_poll
 
 ---
 
-## 📈 Roadmap
+## Roadmap
 
 * [ ] Plug‑in sentiment model hot‑swap (OpenAI, local LLM, spaCy)
 * [ ] Web UI dashboard (FastAPI + React) to tweak rules live
@@ -123,7 +123,7 @@ sudo systemctl enable --now gmail_poll
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 PRs are welcome! Please:
 
