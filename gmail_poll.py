@@ -14,11 +14,9 @@ import re
 import time
 from datetime import datetime, timezone
 from typing import Dict, List
-
 import pickle
 import logging
 from textblob import TextBlob
-
 from dotenv import load_dotenv, dotenv_values
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -99,9 +97,9 @@ def plain_text_from_msg(msg: Dict) -> str:
 def classify(text: str) -> str:
     polarity = TextBlob(text).sentiment.polarity
     text_low = text.lower()
-    if "invoice" in text_low or "payment due" in text_low:
+    if "invoice" in text_low or "payment due" in text_low or "monthly statement" in text_low:
         return "necessary"
-    if polarity > 0.2 or "thank you" in text_low:
+    if polarity > 0.4 or "thank you" in text_low:
         return "important"
     return "neither"
 
@@ -134,6 +132,7 @@ def poll_once(service):
             cat = classify(body)
             act(service, mid, cat, LABEL_ID_REVIEW)
             LOG.info("%s %s", mid, cat)
+            print(f"{mid} - {cat}")
         except Exception as exc:  # noqa: BLE001
             LOG.exception("processing %s failed: %s", mid, exc)
 

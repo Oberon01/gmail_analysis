@@ -1,3 +1,4 @@
 .gmail
 gmail_analysis.log
 __pycache__
+.env
