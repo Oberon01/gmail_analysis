@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from typing import Dict, List
 import pickle
 import logging
+from pathlib import Path
 from textblob import TextBlob
 from dotenv import load_dotenv, dotenv_values
 from google.auth.transport.requests import Request
@@ -23,7 +24,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 # ---------------------------------------------------------------------------
-# env + logging ----------------------------------------------------------------
+# env + logging -------------------------------------------------------------
 load_dotenv()
 LOG = logging.getLogger("gmail_poll")
 LOG.setLevel(logging.INFO)
@@ -56,7 +57,7 @@ def get_service():
 
 
 # ---------------------------------------------------------------------------
-# helpers --------------------------------------------------------------------
+# helpers -------------------------------------------------------------------
 
 def unread_message_ids(service):
     resp = service.users().messages().list(userId="me", q="is:unread").execute()
@@ -138,12 +139,51 @@ def poll_once(service):
 
 
 def main(loop_seconds: int = 600):
+    
     svc = get_service()
     end = time.time() + loop_seconds
     while time.time() < end:
         poll_once(svc)
         time.sleep(30)
     LOG.info("poller finished %s seconds OK", loop_seconds)
+
+def cli():
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Autonomous Gmail Triage Daemon")
+    parser.add_argument("--auth", action="store_true", help="Authenticate and exit")
+    parser.add_argument("--once", action="store_true", help="Run a single pass then exit")
+    parser.add_argument("--daemon", action="store_true", help="Run as daemon polling every interval")
+    parser.add_argument("--dry-run", action="store_true", help="Simulate without modifying Gmail")
+    parser.add_argument("--rules", type=str, help="Path to rules.yaml")
+    args = parser.parse_args()
+
+    # Load environment
+    load_dotenv()
+    LABEL_ID_REVIEW = os.getenv("LABEL_ID_REVIEW")
+    POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", 600))
+    CACHE_DB = Path(os.getenv("GMAIL_POLL_CACHE", "~/.cache/gmail_poll/cache.db")).expanduser()
+
+    # Auth only mode
+    if args.auth:
+        get_service()
+        print("Authentication complete.")
+        return
+
+    # Load service
+    svc = get_service()
+
+    # Load rules (optional)
+    rules = load_rules(args.rules) if args.rules else {}
+
+    # Run once or as daemon
+    if args.once:
+        poll_once(svc, rules, LABEL_ID_REVIEW, dry_run=args.dry_run)
+    elif args.daemon:
+        run_daemon(svc, rules, LABEL_ID_REVIEW, interval=POLL_INTERVAL, dry_run=args.dry_run)
+    else:
+        print("No mode specified. Use --once or --daemon.")
+
 
 
 if __name__ == "__main__":

@@ -2,3 +2,5 @@
 gmail_analysis.log
 __pycache__
 .env
+token.*
+credentials.*
