@@ -2,29 +2,39 @@
 Fixes logging placement & label-ID lookup.
 Assumes .env with LABEL_ID_REVIEW and TextBlob installed.
 """
+
 from __future__ import annotations
 
 import base64
 import email
 import html
-import json
 import os
 import pathlib
 import re
 import time
-from datetime import datetime, timezone
-from typing import Dict, List
 import pickle
 import logging
 from pathlib import Path
+from typing import Dict, List
 from textblob import TextBlob
-from dotenv import load_dotenv, dotenv_values
+from dotenv import load_dotenv
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+import sqlite3
+
+# --------------------------------------------------------------------------
+# sqlite db
+def init_cache_db(path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE IF NOT EXISTS seen (id TEXT PRIMARY KEY)")
+    conn.commit()
+    return conn
+
 
 # ---------------------------------------------------------------------------
-# env + logging -------------------------------------------------------------
+# env + logging 
 load_dotenv()
 LOG = logging.getLogger("gmail_poll")
 LOG.setLevel(logging.INFO)
@@ -57,7 +67,7 @@ def get_service():
 
 
 # ---------------------------------------------------------------------------
-# helpers -------------------------------------------------------------------
+# helpers 
 
 def unread_message_ids(service):
     resp = service.users().messages().list(userId="me", q="is:unread").execute()
@@ -123,29 +133,106 @@ def act(service, msg_id: str, category: str, review_id: str | None):
 
 
 # ---------------------------------------------------------------------------
-# main loop ------------------------------------------------------------------
+# extended logic 
 
-def poll_once(service):
+def poll_once(service, rules=None, review_id=None, dry_run=False, conn=None) -> List[Dict]:
+    digest = []
+    seen = set(row[0] for row in conn.execute("SELECT id FROM seen").fetchall())
+
     for mid in unread_message_ids(service):
         try:
             msg = get_message(service, mid)
             body = plain_text_from_msg(msg)
             cat = classify(body)
-            act(service, mid, cat, LABEL_ID_REVIEW)
-            LOG.info("%s %s", mid, cat)
+
+            # passover if already parsed
+            if mid in seen:
+                continue
+
+            # Rules override
+            if rules:
+                sender = next((h['value'] for h in msg['payload'].get('headers', []) if h['name'] == 'From'), "")
+                if any(w in sender for w in rules.get("whitelist", [])):
+                    cat = "important"
+                elif any(b in sender for b in rules.get("blacklist", [])):
+                    cat = "neither"
+            else:
+                sender = "unknown"
+
+            subject = next((h['value'] for h in msg['payload'].get('headers', []) if h['name'] == 'Subject'), "No Subject")
+
+            if dry_run:
+                LOG.info("[DRY RUN] %s → %s", mid, cat)
+            else:
+                act(service, mid, cat, review_id)
+
             print(f"{mid} - {cat}")
-        except Exception as exc:  # noqa: BLE001
+
+            digest.append({
+                "id": mid,
+                "category": cat,
+                "subject": subject,
+                "sender": sender,
+            })
+
+            conn.execute("INSERT OR IGNORE INTO seen (id) VALUES (?)", (mid,))
+            conn.commit()
+
+        except Exception as exc:
             LOG.exception("processing %s failed: %s", mid, exc)
 
+    return digest
 
-def main(loop_seconds: int = 600):
-    
-    svc = get_service()
-    end = time.time() + loop_seconds
+
+def run_daemon(service, rules, review_id, interval=600, dry_run=False, conn=None):
+    end = time.time() + interval
     while time.time() < end:
-        poll_once(svc)
+        poll_once(service, rules=rules, review_id=review_id, dry_run=dry_run, conn=conn)
         time.sleep(30)
-    LOG.info("poller finished %s seconds OK", loop_seconds)
+    LOG.info("poller finished %s seconds OK", interval)
+
+def export_digest_to_md(digest: List[Dict], out_path: Path):
+    from datetime import datetime
+
+    if not digest:
+        return
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    outfile = out_path / f"triage_{date_str}.md"
+
+    grouped = {"important": [], "necessary": [], "neither": []}
+    for item in digest:
+        grouped[item["category"]].append(item)
+
+    with open(outfile, "w", encoding="utf-8") as f:
+        f.write(f"# Gmail Triage Digest — {date_str}\n\n")
+
+        for category in ["important", "necessary", "neither"]:
+            if not grouped[category]:
+                continue
+            f.write(f"## {category.capitalize()}\n\n")
+            for item in grouped[category]:
+                subj = item['subject']
+                sndr = item['sender']
+                f.write(f"- **{subj}** — _{sndr}_\n")
+            f.write("\n")
+
+    print(f"✓ Digest written to {outfile}")
+
+
+def load_rules(path):
+    import yaml
+    try:
+        with open(path, "r") as f:
+            return yaml.safe_load(f)
+    except Exception as e:
+        LOG.warning("Failed to load rules from %s: %s", path, e)
+        return {}
+
+
+# ---------------------------------------------------------------------------
+# CLI entrypoint 
 
 def cli():
     import argparse
@@ -160,31 +247,28 @@ def cli():
 
     # Load environment
     load_dotenv()
-    LABEL_ID_REVIEW = os.getenv("LABEL_ID_REVIEW")
-    POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", 600))
-    CACHE_DB = Path(os.getenv("GMAIL_POLL_CACHE", "~/.cache/gmail_poll/cache.db")).expanduser()
+    label_id_review = os.getenv("LABEL_ID_REVIEW")
+    poll_interval = int(os.getenv("POLL_INTERVAL", 600))
+    cache_path = Path(os.getenv("GMAIL_POLL_CACHE", "~/.cache/gmail_poll/cache.db")).expanduser()
 
-    # Auth only mode
+    # Auth only
     if args.auth:
         get_service()
         print("Authentication complete.")
         return
 
-    # Load service
-    svc = get_service()
-
-    # Load rules (optional)
+    service = get_service()
     rules = load_rules(args.rules) if args.rules else {}
+    conn = init_cache_db(cache_path)
 
-    # Run once or as daemon
     if args.once:
-        poll_once(svc, rules, LABEL_ID_REVIEW, dry_run=args.dry_run)
+        digest = poll_once(service, rules=rules, review_id=label_id_review, dry_run=args.dry_run, conn=conn)
+        export_digest_to_md(digest, Path("gmail_logs"))
     elif args.daemon:
-        run_daemon(svc, rules, LABEL_ID_REVIEW, interval=POLL_INTERVAL, dry_run=args.dry_run)
+        run_daemon(service, rules=rules, review_id=label_id_review, interval=poll_interval, dry_run=args.dry_run)
     else:
-        print("No mode specified. Use --once or --daemon.")
-
+        print("No execution mode specified. Use --once or --daemon.")
 
 
 if __name__ == "__main__":
-    main()
+    cli()

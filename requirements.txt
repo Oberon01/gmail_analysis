@@ -41,6 +41,7 @@ pyasn1==0.6.1
 pyasn1_modules==0.4.2
 pyparsing==3.2.3
 python-dotenv==1.1.1
+PyYAML==6.0.2
 regex==2024.11.6
 requests==2.32.4
 requests-oauthlib==2.0.0
