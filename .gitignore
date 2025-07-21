@@ -1,8 +1,22 @@
+#environment
 .gmail
-gmail_analysis.log
-__pycache__
+
+# Python
+__pycache__/
+*.pyc
+
+# Local secrets
 .env
 token.pickle
+token.enc
 credentials.json
-rules.yaml
+*.key
+*.log
+*.yaml
+
+# Docker
+*.tar
+.vscode/
+
+# Output
 gmail_logs/
