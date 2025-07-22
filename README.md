@@ -10,7 +10,7 @@
 
 ## Why?
 
-Your inbox should empower you—not bury you. *gmail\_poll* applies lightweight NLP to slice daily mail into three buckets:
+Your inbox should empower you, not bury you. *gmail\_poll* applies lightweight NLP to slice daily mail into three buckets:
 
 | Bucket                       | Action                   | Definition                                    |
 | ---------------------------- | ------------------------ | --------------------------------------------- |
